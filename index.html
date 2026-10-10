@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SecureText - Caesar & Affine Cipher</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--ink:#1d2433;--mut:#5b6478;--pri:#2557d6;--ok:#14803c;--bad:#c0392b;--line:#dde2ee}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+header{background:var(--pri);color:#fff;padding:22px 16px;text-align:center}
+header h1{margin:0;font-size:1.6rem}header p{margin:4px 0 0;opacity:.9;font-size:.95rem}
+main{max-width:980px;margin:18px auto;padding:0 14px;display:grid;gap:16px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+h2{margin:0 0 12px;font-size:1.1rem}
+label{display:block;font-weight:600;font-size:.9rem;margin:10px 0 4px}
+textarea,input,select{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit}
+textarea{min-height:80px;resize:vertical}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+button{background:var(--pri);color:#fff;border:0;border-radius:8px;padding:10px 18px;font:inherit;font-weight:600;cursor:pointer}
+button.alt{background:#fff;color:var(--pri);border:1px solid var(--pri)}
+.out{background:#eef3ff;border-radius:8px;padding:12px;font-family:Consolas,monospace;word-break:break-all;min-height:44px}
+.err{color:var(--bad);font-weight:600;margin-top:8px}
+.info{color:var(--mut);font-size:.9rem;margin-top:8px}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th,td{border:1px solid var(--line);padding:6px 8px;text-align:left}
+th{background:#f0f3fa}
+.scroll{overflow-x:auto;max-height:320px;overflow-y:auto}
+.ok{color:var(--ok);font-weight:700}.bad{color:var(--bad);font-weight:700}
+</style>
+</head>
+<body>
+<header>
+  <h1>SecureText</h1>
+  <p>Enkripsi &amp; Dekripsi Pesan dengan Caesar Cipher dan Affine Cipher (Aritmetika Modular)</p>
+</header>
+<main>
+
+<section>
+  <h2>1. Enkripsi / Dekripsi</h2>
+  <label for="msg">Pesan</label>
+  <textarea id="msg">MATEMATIKA DISKRIT</textarea>
+  <div class="row">
+    <div><label for="algo">Algoritma</label>
+      <select id="algo"><option value="affine">Affine Cipher</option><option value="caesar">Caesar Cipher</option></select></div>
+    <div id="boxA"><label for="ka">Kunci a (harus koprima dengan 26)</label><input id="ka" type="number" value="5"></div>
+    <div><label for="kb">Kunci b (geser)</label><input id="kb" type="number" value="8"></div>
+  </div>
+  <div class="btns">
+    <button onclick="jalankan('enc')">Enkripsi</button>
+    <button class="alt" onclick="jalankan('dec')">Dekripsi</button>
+  </div>
+  <div id="err" class="err"></div>
+  <label>Hasil</label>
+  <div id="hasil" class="out"></div>
+  <div id="rumus" class="info"></div>
+</section>
+
+<section>
+  <h2>2. Langkah Perhitungan per Huruf</h2>
+  <div class="scroll"><table id="langkah"><thead><tr><th>Huruf</th><th>Nilai (0-25)</th><th>Perhitungan mod 26</th><th>Hasil</th><th>Huruf Hasil</th></tr></thead><tbody></tbody></table></div>
+</section>
+
+<section>
+  <h2>3. Pengujian Otomatis (Expected vs Actual)</h2>
+  <div class="btns" style="margin:0 0 10px"><button onclick="ujiSemua()">Jalankan Semua Test Case</button></div>
+  <div class="scroll"><table id="uji"><thead><tr><th>No</th><th>Kasus</th><th>Expected</th><th>Actual</th><th>Status</th></tr></thead><tbody></tbody></table></div>
+</section>
+
+</main>
+
+<script>
+/* ===== KODE INTI: Aritmetika Modular ===== */
+const M = 26; // ukuran alfabet
+
+// Modulo yang selalu non-negatif (JavaScript % bisa negatif)
+function mod(n, m) { return ((n % m) + m) % m; }
+
+// FPB dengan algoritma Euclid
+function gcd(a, b) { return b === 0 ? Math.abs(a) : gcd(b, a % b); }
+
+// Invers modulo: cari x sehingga (a*x) mod m = 1 (Extended Euclid)
+function modInverse(a, m) {
+  a = mod(a, m);
+  let [r0, r1] = [m, a], [t0, t1] = [0, 1];
+  while (r1 !== 0) {
+    const q = Math.floor(r0 / r1);
+    [r0, r1] = [r1, r0 - q * r1];
+    [t0, t1] = [t1, t0 - q * t1];
+  }
+  return r0 === 1 ? mod(t0, m) : null; // null jika tidak ada invers
+}
+
+// Validasi kunci: gcd(a, 26) harus 1
+function cekKunci(a, b) {
+  if (!Number.isInteger(a) || !Number.isInteger(b)) return "Kunci a dan b harus bilangan bulat.";
+  if (gcd(a, M) !== 1) return "Kunci a = " + a + " tidak valid: FPB(" + a + ", 26) = " + gcd(a, M) + " (harus 1) sehingga tidak punya invers modulo 26.";
+  return null;
+}
+
+// Enkripsi Affine: C = (a*P + b) mod 26   (Caesar: a = 1)
+function affineEnkripsi(teks, a, b) {
+  return proses(teks, p => mod(a * p + b, M));
+}
+
+// Dekripsi Affine: P = a^-1 * (C - b) mod 26
+function affineDekripsi(teks, a, b) {
+  const inv = modInverse(a, M);
+  return proses(teks, c => mod(inv * (c - b), M));
+}
+
+// Caesar adalah kasus khusus Affine dengan a = 1
+function caesarEnkripsi(teks, k) { return affineEnkripsi(teks, 1, k); }
+function caesarDekripsi(teks, k) { return affineDekripsi(teks, 1, k); }
+
+// Terapkan fungsi f pada setiap huruf, simbol/angka/spasi tidak diubah
+function proses(teks, f) {
+  let hasil = "";
+  for (const ch of teks) {
+    const up = ch >= "A" && ch <= "Z", lo = ch >= "a" && ch <= "z";
+    if (up || lo) {
+      const basis = up ? 65 : 97;
+      hasil += String.fromCharCode(f(ch.charCodeAt(0) - basis) + basis);
+    } else hasil += ch;
+  }
+  return hasil;
+}
+/* ===== AKHIR KODE INTI ===== */
+
+// ----- Antarmuka -----
+const $ = id => document.getElementById(id);
+function ambilKunci() {
+  const caesar = $("algo").value === "caesar";
+  return { caesar, a: caesar ? 1 : parseInt($("ka").value, 10), b: parseInt($("kb").value, 10) };
+}
+
+function jalankan(mode) {
+  const { caesar, a, b } = ambilKunci();
+  const teks = $("msg").value;
+  $("err").textContent = ""; $("hasil").textContent = ""; $("rumus").textContent = "";
+  $("langkah").tBodies[0].innerHTML = "";
+  const e = cekKunci(a, b);
+  if (e) { $("err").textContent = e; return; }
+  const inv = modInverse(a, M);
+  const hasil = mode === "enc" ? affineEnkripsi(teks, a, b) : affineDekripsi(teks, a, b);
+  $("hasil").textContent = hasil;
+  $("rumus").textContent = mode === "enc"
+    ? "C = (" + a + " x P + " + b + ") mod 26" + (caesar ? "  (Caesar: a = 1)" : "")
+    : "P = " + inv + " x (C - " + b + ") mod 26   (invers " + a + " mod 26 = " + inv + ")";
+  let rows = "";
+  for (const ch of teks) {
+    const up = ch >= "A" && ch <= "Z", lo = ch >= "a" && ch <= "z";
+    if (!up && !lo) continue;
+    const x = ch.charCodeAt(0) - (up ? 65 : 97);
+    const y = mode === "enc" ? mod(a * x + b, M) : mod(inv * (x - b), M);
+    const rumus = mode === "enc" ? "(" + a + "x" + x + " + " + b + ") mod 26" : inv + "x(" + x + " - " + b + ") mod 26";
+    rows += "<tr><td>" + ch + "</td><td>" + x + "</td><td>" + rumus + "</td><td>" + y + "</td><td>" + String.fromCharCode(y + (up ? 65 : 97)) + "</td></tr>";
+  }
+  $("langkah").tBodies[0].innerHTML = rows;
+}
+
+$("algo").addEventListener("change", () => { $("boxA").style.display = $("algo").value === "caesar" ? "none" : ""; });
+
+// ----- Test case -----
+const TESTS = [
+  { n: "Caesar normal: HELLO, k=3", exp: "KHOOR", run: () => caesarEnkripsi("HELLO", 3) },
+  { n: "Affine normal (validasi manual): MATEMATIKA DISKRIT, a=5, b=8", exp: "QIZCQIZWGI XWUGPWZ", run: () => affineEnkripsi("MATEMATIKA DISKRIT", 5, 8) },
+  { n: "Dekripsi Affine: QIZCQIZWGI XWUGPWZ, a=5, b=8", exp: "MATEMATIKA DISKRIT", run: () => affineDekripsi("QIZCQIZWGI XWUGPWZ", 5, 8) },
+  { n: "Batas alfabet (wrap): XYZ, k=3", exp: "ABC", run: () => caesarEnkripsi("XYZ", 3) },
+  { n: "Huruf kecil + simbol dipertahankan: Halo, Dunia 2026!, a=7, b=3", exp: "Adcx, Ynqhd 2026!", run: () => affineEnkripsi("Halo, Dunia 2026!", 7, 3) },
+  { n: "Invers modulo: 5 mod 26", exp: "21", run: () => String(modInverse(5, 26)) },
+  { n: "Kunci tidak valid: a=13 (FPB dengan 26 = 13)", exp: "DITOLAK", run: () => cekKunci(13, 4) ? "DITOLAK" : "DITERIMA" },
+  { n: "Round-trip: dekripsi(enkripsi(P)) = P, a=9, b=14", exp: "Matematika Diskrit 2026!", run: () => affineDekripsi(affineEnkripsi("Matematika Diskrit 2026!", 9, 14), 9, 14) }
+];
+
+function ujiSemua() {
+  let h = "";
+  TESTS.forEach((t, i) => {
+    const act = t.run(), ok = act === t.exp;
+    h += "<tr><td>" + (i + 1) + "</td><td>" + t.n + "</td><td>" + t.exp + "</td><td>" + act + "</td><td class='" + (ok ? "ok" : "bad") + "'>" + (ok ? "Sesuai" : "Tidak") + "</td></tr>";
+  });
+  $("uji").tBodies[0].innerHTML = h;
+}
+
+jalankan("enc"); ujiSemua();
+</script>
+</body>
+</html>
